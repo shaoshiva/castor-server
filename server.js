@@ -50,6 +50,8 @@ const scenarios = [
     // },
 ];
 
+var currentScenario = null;
+
 /**
  * On new connection
  */
@@ -72,6 +74,10 @@ wss.on('connection', function connection(ws, req) {
         console.log('');
     });
 });
+
+function debug(data) {
+    console.log('[DEBUG] ', data);
+}
 
 /**
  * Resets the clients (force reloading each client's page, for example to force updating the scripts)
@@ -103,7 +109,7 @@ function runScenario(scenario) {
  * Runs the next scenario
  */
 function nextScenario() {
-    var scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+    var scenario = getNextScenario();
 
     runScenario(scenario);
 
@@ -118,8 +124,28 @@ function startScenarioTimeline() {
     nextScenario();
 }
 
-function debug(data) {
-    console.log('[DEBUG] ', data);
+/**
+ * Gets the current scenario
+ *
+ * @returns {*}
+ */
+function getCurrentScenario()
+{
+    if (!currentScenario) {
+        currentScenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+    }
+
+    return currentScenario;
+}
+
+/**
+ * Gets the current scenario
+ *
+ * @returns {*}
+ */
+function getNextScenario()
+{
+    return scenarios[Math.floor(Math.random() * scenarios.length)];
 }
 
 /**
@@ -163,15 +189,11 @@ function handleMessage(message, ws) {
     // Handles actions
     switch (data.action) {
 
-        // Gets the next scenario
-        case 'getNextScenario':
-
-            var nextScenario = scenarios[Math.floor(Math.random() * scenarios.length)];
-
-            // Send it back to the client
+        // Gets the current scenario
+        case 'getCurrentScenario':
             ws.sendObject({
                 action: 'runScenario',
-                data: nextScenario,
+                data: getCurrentScenario(),
             });
             break;
     }
