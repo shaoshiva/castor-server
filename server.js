@@ -17,7 +17,7 @@ const wss = new WebSocket.Server({
 const scenarios = [
     {
         title: 'Pull requests',
-        timeout: 60000,
+        // timeout: 60000,
         handler: 'iframe',
         handlerOptions: {
             url: 'http://pascal.lyon.novius.fr/git/pulls/',
@@ -28,7 +28,7 @@ const scenarios = [
     },
     {
         title: 'Demo message',
-        timeout: 60000,
+        // timeout: 60000,
         handler: 'html',
         handlerOptions: {
             content: fs.readFileSync('views/message.html').toString(),
@@ -102,7 +102,6 @@ function runScenario(scenario) {
 
     console.log('End of broadcast');
     console.log('');
-
 }
 
 /**
@@ -145,7 +144,13 @@ function getCurrentScenario()
  */
 function getNextScenario()
 {
-    return scenarios[Math.floor(Math.random() * scenarios.length)];
+    // Gets the next random scenario
+    var scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+
+    // Sets as the current one
+    currentScenario = scenario;
+
+    return currentScenario;
 }
 
 /**
