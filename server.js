@@ -1,5 +1,7 @@
 const Server = require('./src/Server.js');
 
+const commands = require('./config/commands.js');
+
 const server = new Server({
     requestToken: 'V?Tv)k9hGvM?~${MAk5sT%NfdN\N~!$TdZGuB%cD',
     database: {
@@ -8,6 +10,7 @@ const server = new Server({
         password : 'novius',
         database : 'novius_live',
     },
+    commands,
 });
 
 server.run();

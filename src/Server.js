@@ -4,10 +4,14 @@ const fs            = require('fs');
 const WebSocket     = require('ws');
 const mysql         = require('mysql');
 
+/**
+ * The server
+ */
 class Server
 {
     constructor(options)
     {
+        // Default options
         this.options = Object.assign({
             requestToken: '',
             scenarioTimeout: 60000,
@@ -16,6 +20,10 @@ class Server
                 user     : 'root',
                 password : '',
                 database : 'server',
+            },
+            commands: {
+                public: {},
+                admin: {},
             },
         }, options || {});
 
@@ -87,8 +95,11 @@ class Server
             console.log('New connection from ', req.connection.remoteAddress);
 
             // Implements a method to send an object
-            ws.sendObject = (data) => {
-                ws.send(JSON.stringify(data));
+            ws.sendPayload = (payload) => {
+                ws.send(JSON.stringify({
+                    time: Date.now(),
+                    payload,
+                }));
             };
 
             // Greetings
@@ -127,11 +138,49 @@ class Server
     }
 
     /**
-     * Broadcasts a message to all the connected clients
+     * Starts the scenario timeline
      *
-     * @param message
+     * @returns {Promise}
      */
-    broadcast(message)
+    startTimeline()
+    {
+        console.log('Starting timeline...');
+
+        // Requests a random scenario
+        return this.runNextScenario(this.requestRandomScenario());
+    }
+
+    /**
+     * Runs the next scenario in timeline
+     *
+     * @returns {Promise}
+     */
+    runNextScenario(promise)
+    {
+        return promise
+            .then((scenario) => {
+
+                // Displays the scenario
+                this.displayScenario(scenario);
+
+                // Schedules the next scenario
+                this.scheduleNextScenario(scenario.timeout);
+            })
+            .catch((exception) => {
+                console.log('Failed to request a new scenario: ', exception);
+
+                // Schedules the next scenario
+                this.scheduleNextScenario();
+            })
+        ;
+    }
+
+    /**
+     * Broadcasts a payload to all the connected clients
+     *
+     * @param payload
+     */
+    broadcast(payload)
     {
         let wss = this.getWebSocketServer();
 
@@ -140,7 +189,7 @@ class Server
         wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
                 console.log('Sending to client ', client._socket.remoteAddress);
-                client.sendObject(message);
+                client.sendPayload(payload);
             }
         });
 
@@ -148,78 +197,131 @@ class Server
         console.log('');
     }
 
-    /**
-     * Starts the scenario timeline
-     *
-     * @returns {Promise}
-     */
-    startTimeline()
+    broadcastScenario(scenario)
     {
-        console.log('Starting timeline...');
-        return this.runNewScenario();
+        this.broadcast({
+            command: 'runScenario',
+            params: {
+                scenario,
+            },
+        });
+    }
+
+    scheduleNextScenario(delay)
+    {
+        // Clears the previous timer for the next scenario
+        if (this.nextScenarioTimer) {
+            clearTimeout(this.nextScenarioTimer);
+        }
+
+        // Runs a new timer for the next scenario
+        this.nextScenarioTimer = setTimeout(() => {
+            this.runNewScenario();
+        }, delay || this.options.scenarioTimeout);
+    }
+
+    createScenario(options)
+    {
+        return new Promise((resolve, reject) => {
+
+            let record = {
+                handler: options.handler,
+                handler_options: JSON.stringify(options.handler_options || options.handler_options || {}),
+                priority: parseInt(options.priority, 10) || 0,
+                date_start: options.date_start || null,
+                date_end: options.date_end || null,
+                week_days: options.week_days || null,
+                hour_start: options.hour_start || null,
+                hour_end: options.hour_end || null,
+                display_limit: options.display_limit || null,
+            };
+
+            console.log('record to insert', record);
+
+            this.connection.query(`INSERT INTO scenarios SET ?`, record, (error, results, fields) => {
+                console.log('insertion results ', results);
+
+                if (error) {
+                    reject();
+                    throw error;
+                }
+
+                if (results.insertId) {
+                    resolve(results.insertId);
+                } else {
+                    reject('Cannot find the newly created scenario (no inserted ID).');
+                }
+            });
+        });
     }
 
     /**
-     * Runs the next scenario
+     * Requests a scenario by ID
      *
+     * @param id
      * @returns {Promise}
      */
-    runNewScenario(id, options)
+    requestScenarioById(id)
     {
-        // Requests a new scenario
-        return this.requestNewScenario(id, options)
-
-            .then((scenario) => {
-
-                // Broadcasts the new scenario (only if different from precedent scenario)
-                this.broadcast({
-                    action: 'runScenario',
-                    data: scenario,
-                });
-
-                // Runs the timer for the next scenario
-                if (this.nextScenarioTimer) clearTimeout(this.nextScenarioTimer);
-                this.nextScenarioTimer = setTimeout(() => {
-                    this.runNewScenario();
-                }, scenario.timeout || this.options.scenarioTimeout);
-            })
-
-            .catch((e) => {
-                console.log('Failed to request next scenario: ', e);
-            })
-        ;
+        return this.getScenarioByQuery('SELECT * FROM scenarios WHERE id = ? LIMIT 1', [parseInt(id, 10)]);
     }
 
     /**
-     * Gets the current scenario
+     * Requests a random scenario
      *
      * @returns {*}
      */
-    getCurrentScenario()
-    {
-        return this.currentScenario;
+    requestRandomScenario() {
+        // Builds the query
+        //
+        // On prends le scénario le plus haut en priorité, dans l'interval de temps programmé (date de début,
+        // date de fin, jours de la semaine, plage horaire). Si plusieurs scénarios qui match, on prends celui
+        // avec le nombre d'affichage le plus bas et la date de création la plus ancienne.
+        //
+        // Gets the scenario with the highest priority, in the scheduled time interval (start date,
+        // end date, days of the week, time slot), with the lowest display number and the earliest creation date.
+        //
+        // @todo date de création la plus ancienne.
+        //
+        return this.getScenarioByQuery(`
+            SELECT * 
+            FROM scenarios AS s1 
+            WHERE priority = ( 
+              SELECT MAX(priority)
+              FROM scenarios AS s2 
+              WHERE (date_start IS NULL OR date_start <= NOW())
+              AND (date_end IS NULL OR date_end >= NOW())
+              AND (display_limit IS NULL OR display_count < display_limit)
+            ) 
+            ORDER BY display_count ASC, RAND()
+            LIMIT 1
+        `);
     }
 
-    /**
-     * Sets the current scenario
-     *
-     * @param scenario
-     */
-    setCurrentScenario(scenario)
+    getScenarioByQuery(query, data)
     {
-        this.previousScenario = this.currentScenario;
-        this.currentScenario = scenario;
-        console.log('Current scenario: ', scenario);
-    }
-
-    /**
-     * Gets the previous scenario
-     *
-     * @returns {*|null}
-     */
-    getPreviousScenario()
-    {
-        return this.previousScenario || null;
+        return new Promise((resolve, reject) => {
+            let processResult = (error, results, fields) => {
+                // Error
+                if (error) {
+                    reject(error, results);
+                }
+                // No result
+                else if (results.length === 0) {
+                    resolve(null);
+                }
+                // Success
+                else {
+                    resolve(this.buildScenarioFromRecord(results[0]));
+                }
+            };
+            // Executes the query
+            if (typeof data !== 'undefined') {
+                this.connection.query(query, data, processResult);
+            } else {
+                this.connection.query(query, processResult);
+            }
+        });
     }
 
     /**
@@ -229,7 +331,7 @@ class Server
      * @param options
      * @returns {Promise}
      */
-    requestNewScenario(id, options)
+    requestScenario(id, options)
     {
         return new Promise((resolve, reject) => {
 
@@ -286,23 +388,69 @@ class Server
                         scenario = Object.assign(scenario, options);
                     }
 
-                    // Sets as the current one
-                    this.setCurrentScenario(scenario);
-
-                    // Sets the scenario's last display date and increment display counter
-                    this.connection.query(`
-                        UPDATE scenarios
-                        SET display_date_last = NOW(),
-                        display_count = display_count + 1
-                        WHERE id = ?
-                    `, [scenario.id], function (error, results, fields) {
-                        if (error) throw error;
-                    });
-
                     resolve(scenario);
                 }
             });
         });
+    }
+
+    /**
+     * Displays the given scenario
+     *
+     * @param scenario
+     */
+    displayScenario(scenario)
+    {
+        console.log('Displaying a new scenario: ', scenario);
+
+        // Sets as the current scenario
+        this.setCurrentScenario(scenario);
+
+        // Broadcasts to clients
+        this.broadcastScenario(scenario);
+
+        // Updates the scenario's last display date and display counter
+        let query = `
+            UPDATE scenarios
+            SET display_date_last = NOW(),
+            display_count = display_count + 1
+            WHERE id = ?
+        `;
+        this.connection.query(query, [scenario.id], function (error, results, fields) {
+            if (error) throw error;
+        });
+    }
+
+    /**
+     * Gets the current scenario
+     *
+     * @returns {*}
+     */
+    getCurrentScenario()
+    {
+        return this.currentScenario;
+    }
+
+    /**
+     * Sets the current scenario
+     *
+     * @param scenario
+     */
+    setCurrentScenario(scenario)
+    {
+        this.previousScenario = this.currentScenario;
+        this.currentScenario = scenario;
+        console.log('Current scenario: ', scenario);
+    }
+
+    /**
+     * Gets the previous scenario
+     *
+     * @returns {*|null}
+     */
+    getPreviousScenario()
+    {
+        return this.previousScenario || null;
     }
 
     /**
@@ -315,9 +463,11 @@ class Server
     {
         // Tries parsing the message as JSON
         try {
-            let messageObject = JSON.parse(message);
-            if (typeof messageObject === 'object') {
-                message = messageObject;
+            if (typeof message === 'string' && message[0] === '{') {
+                const messageObject = JSON.parse(message);
+                if (typeof messageObject === 'object') {
+                    message = messageObject;
+                }
             }
         } catch (e) {
             this.debug(e);
@@ -325,45 +475,54 @@ class Server
 
         // Checks format of message
         if (typeof message !== 'object') {
-            console.warn('Invalid request format');
+            console.warn('Invalid request: object expected.');
             return;
         }
 
         // Checks the token
         if (message.token !== this.options.requestToken) {
-            console.warn('Invalid token: ', message.token); // @todo should we really print the invalid token ?
+            console.warn('Invalid request token.');
             return;
         }
 
-        let data = message.data;
-        this.debug(data);
+        // Gets the payload
+        let payload = message.payload;
+        this.debug(payload);
 
-        // Checks if action is specified
-        if (typeof data.action === 'undefined') {
-            console.warn('No action specified');
+        // Checks if a command is specified
+        if (typeof payload.command !== 'string') {
+            console.warn('Command not specified.');
             return;
         }
 
-        // Handles actions
-        switch (data.action) {
+        // Public commands
+        if (typeof this.options.commands.public[payload.command] !== 'undefined') {
+            // Runs the command
+            try {
+                let command = new this.options.commands.public[payload.command](this, ws, payload.params || {});
+                command.run();
+            } catch (exception) {
+                console.warn('Command error: ', exception);
+            }
+        }
 
-            // Runs the current scenario
-            case 'runNewScenario':
-                this.runNewScenario();
-                break;
+        // Admin commands
+        else if (typeof this.options.commands.admin[payload.command] !== 'undefined') {
 
-            // Runs the current scenario
-            case 'runScenario':
-                this.runNewScenario(data.id, data.options);
-                break;
+            // @todo authentication (per token ? per IP ? passphrase ? user session ?)
 
-            // Gets the current scenario
-            case 'getCurrentScenario':
-                ws.sendObject({
-                    action: 'runScenario',
-                    data: this.getCurrentScenario(),
-                });
-                break;
+            // Runs the command
+            try {
+                let command = new this.options.commands.admin[payload.command](this, ws, payload.params || {});
+                command.run();
+            } catch (exception) {
+                console.warn('Command error: ', exception);
+            }
+        }
+
+        // Unknown command
+        else {
+            console.warn('Unknown command: ', payload.command);
         }
     }
 
@@ -385,14 +544,14 @@ class Server
      * Builds the scenario from the given record
      *
      * @param record
-     * @returns {{title, handler: *, handlerOptions: {}}}
+     * @returns {{title, handler: *, handler_options: {}}}
      */
     buildScenarioFromRecord(record)
     {
         let scenario = Object.assign({}, record, {
             title: record.name,
             handler: record.handler,
-            handlerOptions: JSON.parse(record.handler_options) || {},
+            handler_options: JSON.parse(record.handler_options) || {},
         });
 
         // Specific parsing per handler
@@ -400,9 +559,9 @@ class Server
             case 'message':
                 // Compiles the message with the template
                 let template = fs.readFileSync('views/message.html').toString();
-                template = template.replace('{{message}}', scenario.handlerOptions.message || '');
-                template = template.replace('{{image}}', scenario.handlerOptions.image || '//:0');
-                scenario.handlerOptions.content = template;
+                template = template.replace('{{message}}', scenario.handler_options.message || '');
+                template = template.replace('{{image}}', scenario.handler_options.image || '//:0');
+                scenario.handler_options.content = template;
                 break;
 
         }
