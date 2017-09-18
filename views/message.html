@@ -3,10 +3,10 @@
 	<div class="message">
 		<div class="grid-container">
 			<div class="grid-x">
-				<div class="small-4 cell">
-					<img src="https://i.imgpile.com/ndJ15R.jpg" alt=""/>
+				<div class="small-4 cell cell-image">
+					<img class="message-image" src="{{image}}" alt=""/>
 				</div>
-				<div class="small-8 cell">
+				<div class="small-8 cell cell-message">
 					<div class="content">
 						{{message}}
 					</div>
@@ -15,6 +15,15 @@
 		</div>
 	</div>
 </main>
+
+<script>
+	console.log(document.querySelector('img.message-image').getAttribute('src'));
+	if (document.querySelector('img.message-image').getAttribute('src') === '//:0') {
+        document.querySelector('.cell-image').remove();
+        document.querySelector('.cell-message').classList.remove('small-8');
+        document.querySelector('.cell-message').classList.add('small-12');
+	}
+</script>
 
 <style class="cp-pen-styles">@import url("https://fonts.googleapis.com/css?family=Ubuntu");
 * {
@@ -40,7 +49,7 @@ body {
 }
 
 main {
-	min-height: 100vh;
+	/*min-height: 100vh;*/
 	display: -webkit-box;
 	display: -ms-flexbox;
 	display: flex;
@@ -53,9 +62,10 @@ main {
 	justify-content: center;
 	-ms-flex-line-pack: center;
 	align-content: center;
-	-webkit-box-align: center;
-	-ms-flex-align: center;
-	align-items: center;
+	-webkit-box-align: end;
+	-ms-flex-align: end;
+	align-items: end;
+	padding-top: 160px;
 }
 
 .message {
@@ -91,8 +101,8 @@ main {
 .message img {
 	position: relative;
 	display: block;
-	width: 480px;
-	height: 480px;
+	min-width: 100%;
+	height: 70vh;
 	-o-object-fit: cover;
 	object-fit: cover;
 }

@@ -10,7 +10,7 @@ class Server
     {
         this.options = Object.assign({
             requestToken: '',
-            scenarioTimeout: 5000,
+            scenarioTimeout: 60000,
             database: {
                 host     : 'localhost',
                 user     : 'root',
@@ -155,8 +155,8 @@ class Server
      */
     startTimeline()
     {
-        console.log('Starting timeline...')
-        return this.nextScenario();
+        console.log('Starting timeline...');
+        return this.runNewScenario();
     }
 
     /**
@@ -164,14 +164,14 @@ class Server
      *
      * @returns {Promise}
      */
-    nextScenario(id)
+    runNewScenario(id, options)
     {
         // Requests a new scenario
-        return this.requestNewScenario(id)
+        return this.requestNewScenario(id, options)
 
             .then((scenario) => {
 
-                // Broadcasts the new scenario
+                // Broadcasts the new scenario (only if different from precedent scenario)
                 this.broadcast({
                     action: 'runScenario',
                     data: scenario,
@@ -180,7 +180,7 @@ class Server
                 // Runs the timer for the next scenario
                 if (this.nextScenarioTimer) clearTimeout(this.nextScenarioTimer);
                 this.nextScenarioTimer = setTimeout(() => {
-                    this.nextScenario();
+                    this.runNewScenario();
                 }, scenario.timeout || this.options.scenarioTimeout);
             })
 
@@ -207,16 +207,29 @@ class Server
      */
     setCurrentScenario(scenario)
     {
+        this.previousScenario = this.currentScenario;
         this.currentScenario = scenario;
         console.log('Current scenario: ', scenario);
     }
 
     /**
+     * Gets the previous scenario
+     *
+     * @returns {*|null}
+     */
+    getPreviousScenario()
+    {
+        return this.previousScenario || null;
+    }
+
+    /**
      * Requests a new scenario to display
      *
+     * @param id
+     * @param options
      * @returns {Promise}
      */
-    requestNewScenario(id)
+    requestNewScenario(id, options)
     {
         return new Promise((resolve, reject) => {
 
@@ -267,6 +280,11 @@ class Server
 
                     // Builds the scenario
                     let scenario = this.buildScenarioFromRecord(results[0]);
+
+                    // Merges the custom handler options
+                    if (options) {
+                        scenario = Object.assign(scenario, options);
+                    }
 
                     // Sets as the current one
                     this.setCurrentScenario(scenario);
@@ -330,8 +348,13 @@ class Server
         switch (data.action) {
 
             // Runs the current scenario
-            case 'runNextScenario':
-                this.nextScenario(data.id);
+            case 'runNewScenario':
+                this.runNewScenario();
+                break;
+
+            // Runs the current scenario
+            case 'runScenario':
+                this.runNewScenario(data.id, data.options);
                 break;
 
             // Gets the current scenario
@@ -366,19 +389,19 @@ class Server
      */
     buildScenarioFromRecord(record)
     {
-        let scenario = {
-            id: record.id,
+        let scenario = Object.assign({}, record, {
             title: record.name,
             handler: record.handler,
             handlerOptions: JSON.parse(record.handler_options) || {},
-        };
+        });
 
         // Specific parsing per handler
         switch (scenario.handler) {
             case 'message':
                 // Compiles the message with the template
                 let template = fs.readFileSync('views/message.html').toString();
-                template = template.replace('{{message}}', scenario.handlerOptions.message);
+                template = template.replace('{{message}}', scenario.handlerOptions.message || '');
+                template = template.replace('{{image}}', scenario.handlerOptions.image || '//:0');
                 scenario.handlerOptions.content = template;
                 break;
 
