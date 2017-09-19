@@ -8,12 +8,21 @@ const Command = require('../../Command.js');
 class CreateScenario extends Command
 {
     run() {
-        return this.server.createScenario(this.params.options).then((id) => {
-            // Auto-run the created scenario
-            if (this.params.run) {
-                this.server.runNextScenario(this.server.requestScenarioById(id));
-            }
-        });
+        let scenario = this.params.scenario;
+
+        // Sets a default display limit
+        if (!scenario.display_limit) {
+            scenario.display_limit = 1;
+        }
+
+        return this.server.createScenario(scenario)
+            .then((id) => {
+                // Auto-run the created scenario
+                if (this.params.run) {
+                    this.server.runNextScenario(this.server.requestScenarioById(id));
+                }
+            })
+        ;
     }
 }
 

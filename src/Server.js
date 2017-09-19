@@ -107,7 +107,7 @@ class Server
 
             // On message receive
             ws.on('message', (message) => {
-                console.log('Incoming request');
+                console.log('Incoming request.');
                 this.handleMessage(message, ws);
                 console.log('');
             });
@@ -216,7 +216,7 @@ class Server
 
         // Runs a new timer for the next scenario
         this.nextScenarioTimer = setTimeout(() => {
-            this.runNewScenario();
+            this.runNextScenario(this.requestRandomScenario());
         }, delay || this.options.scenarioTimeout);
     }
 
@@ -224,9 +224,16 @@ class Server
     {
         return new Promise((resolve, reject) => {
 
+            // Converts handler options to JSON
+            let handler_options = options.handler_options || {};
+            if (typeof handler_options === 'object') {
+                handler_options = JSON.stringify(handler_options);
+            }
+
+            // Builds the record
             let record = {
                 handler: options.handler,
-                handler_options: JSON.stringify(options.handler_options || options.handler_options || {}),
+                handler_options: handler_options,
                 priority: parseInt(options.priority, 10) || 0,
                 date_start: options.date_start || null,
                 date_end: options.date_end || null,
@@ -236,8 +243,8 @@ class Server
                 display_limit: options.display_limit || null,
             };
 
+            // Inserts the record
             console.log('record to insert', record);
-
             this.connection.query(`INSERT INTO scenarios SET ?`, record, (error, results, fields) => {
                 console.log('insertion results ', results);
 
@@ -286,14 +293,10 @@ class Server
         return this.getScenarioByQuery(`
             SELECT * 
             FROM scenarios AS s1 
-            WHERE priority = ( 
-              SELECT MAX(priority)
-              FROM scenarios AS s2 
-              WHERE (date_start IS NULL OR date_start <= NOW())
-              AND (date_end IS NULL OR date_end >= NOW())
-              AND (display_limit IS NULL OR display_count < display_limit)
-            ) 
-            ORDER BY display_count ASC, RAND()
+            WHERE (date_start IS NULL OR date_start <= NOW())
+            AND (date_end IS NULL OR date_end >= NOW())
+            AND (display_limit IS NULL OR display_count < display_limit)
+            ORDER BY priority, RAND()
             LIMIT 1
         `);
     }
@@ -461,6 +464,8 @@ class Server
      */
     handleMessage(message, ws)
     {
+        console.log(message);
+
         // Tries parsing the message as JSON
         try {
             if (typeof message === 'string' && message[0] === '{') {
@@ -544,12 +549,12 @@ class Server
      * Builds the scenario from the given record
      *
      * @param record
-     * @returns {{title, handler: *, handler_options: {}}}
+     * @returns {{name, handler: *, handler_options: {}}}
      */
     buildScenarioFromRecord(record)
     {
         let scenario = Object.assign({}, record, {
-            title: record.name,
+            name: record.name,
             handler: record.handler,
             handler_options: JSON.parse(record.handler_options) || {},
         });

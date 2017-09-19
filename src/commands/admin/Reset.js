@@ -6,7 +6,7 @@ class Reset extends Command
 {
     run(params) {
         return this.server.broadcast({
-            action: 'reset',
+            command: 'reset',
         });
     }
 }
