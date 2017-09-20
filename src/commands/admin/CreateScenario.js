@@ -11,7 +11,7 @@ class CreateScenario extends Command
         let scenario = this.params.scenario;
 
         // Sets a default display limit
-        if (!scenario.display_limit) {
+        if (typeof scenario.display_limit === 'undefined') {
             scenario.display_limit = 1;
         }
 

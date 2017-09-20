@@ -3,6 +3,7 @@
 const fs            = require('fs');
 const WebSocket     = require('ws');
 const mysql         = require('mysql');
+const express       = require('express')
 
 /**
  * The server
@@ -16,10 +17,17 @@ class Server
             requestToken: '',
             scenarioTimeout: 60000,
             database: {
-                host     : 'localhost',
-                user     : 'root',
-                password : '',
-                database : 'server',
+                host: 'localhost',
+                user: 'root',
+                password: '',
+                database: 'server',
+            },
+            websocket: {
+                port: 8099,
+                origin: '*',
+            },
+            http: {
+                port: 1337,
             },
             commands: {
                 public: {},
@@ -32,6 +40,33 @@ class Server
         this.setupExitHandler();
 
         this.setupWebSocket();
+
+        this.setupWebServer();
+    }
+
+    /**
+     * Setups the web server (admin interface)
+     */
+    setupWebServer()
+    {
+        /**
+         * HTTP server
+         */
+        this.http = express();
+
+        this.http.get('/', function (req, res) {
+            res.send('Hello World!')
+        });
+
+        this.http.listen(this.options.http.port, () => {
+            console.log('Listing to HTTP requests on port '+this.options.http.port+'.')
+        });
+
+        // http.createServer(function (req, res) {
+        //     res.writeHead(200, {'Content-Type': 'text/plain'});
+        //     res.end('Hello World\n'); //This is what the user will see
+        // }).listen(1337, '127.0.0.1');
+        // console.log('Server running at http://127.0.0.1:1337/');
     }
 
     /**
@@ -85,10 +120,7 @@ class Server
     setupWebSocket()
     {
         // Creates the web socket server
-        this.wss = new WebSocket.Server({
-            port: 8099,
-            origin: '*',
-        });
+        this.wss = new WebSocket.Server(this.options.websocket);
 
         // Handles new connections
         this.wss.on('connection', (ws, req) => {
@@ -164,7 +196,7 @@ class Server
                 this.displayScenario(scenario);
 
                 // Schedules the next scenario
-                this.scheduleNextScenario(scenario.timeout);
+                this.scheduleNextScenario(scenario.display_timeout);
             })
             .catch((exception) => {
                 console.log('Failed to request a new scenario: ', exception);
@@ -296,7 +328,7 @@ class Server
             WHERE (date_start IS NULL OR date_start <= NOW())
             AND (date_end IS NULL OR date_end >= NOW())
             AND (display_limit IS NULL OR display_count < display_limit)
-            ORDER BY priority, RAND()
+            ORDER BY priority DESC, RAND()
             LIMIT 1
         `);
     }
@@ -464,8 +496,6 @@ class Server
      */
     handleMessage(message, ws)
     {
-        console.log(message);
-
         // Tries parsing the message as JSON
         try {
             if (typeof message === 'string' && message[0] === '{') {
@@ -565,7 +595,18 @@ class Server
                 // Compiles the message with the template
                 let template = fs.readFileSync('views/message.html').toString();
                 template = template.replace('{{message}}', scenario.handler_options.message || '');
-                template = template.replace('{{image}}', scenario.handler_options.image || '//:0');
+
+                // Compiles the media (image or video)
+                let video = '';
+                let image = '';
+                if (scenario.handler_options.video) {
+                    video = '<video class="media video" autoplay loop class="video"><source type="video/mp4" src="'+scenario.handler_options.video+'"></video>';
+                } else if (scenario.handler_options.image) {
+                    image = '<img class="media image" src="'+scenario.handler_options.image+'" alt=""/>';
+                }
+                template = template.replace('{{image}}', image);
+                template = template.replace('{{video}}', video);
+
                 scenario.handler_options.content = template;
                 break;
 

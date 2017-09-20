@@ -1,7 +1,11 @@
-const Server = require('./src/Server.js');
+"use strict";
 
+const Server = require('./src/Server.js');
 const commands = require('./config/commands.js');
 
+/**
+ * Websocket server
+ */
 const server = new Server({
     requestToken: 'V?Tv)k9hGvM?~${MAk5sT%NfdN\N~!$TdZGuB%cD',
     database: {
