@@ -185,6 +185,7 @@ class Server
     /**
      * Runs the next scenario in timeline
      *
+     * @param {Promise} promise
      * @returns {Promise}
      */
     runNextScenario(promise)
