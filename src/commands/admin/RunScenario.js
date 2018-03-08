@@ -8,7 +8,7 @@ const Command = require('../../Command.js');
 class RunScenario extends Command
 {
     run() {
-        this.server.runNextScenario(
+        return this.server.runNextScenario(
             // Creates a promise to merge the custom options with the requested scenario
             new Promise((resolve, reject) => {
                 // Requests the scenario by ID

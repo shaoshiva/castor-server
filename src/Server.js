@@ -3,7 +3,8 @@
 const fs            = require('fs');
 const WebSocket     = require('ws');
 const mysql         = require('mysql');
-const express       = require('express')
+const express       = require('express');
+const commands      = require('../config/commands.js');
 
 /**
  * The server
@@ -29,10 +30,7 @@ class Server
             http: {
                 port: 1337,
             },
-            commands: {
-                public: {},
-                admin: {},
-            },
+            commands: {},
         }, options || {});
 
         this.setupDatabaseConnection();
@@ -42,6 +40,26 @@ class Server
         this.setupWebSocket();
 
         this.setupWebServer();
+    }
+
+    /**
+     * Returns the default commands
+     *
+     * @returns {*}
+     */
+    static get defaultCommands()
+    {
+        return commands;
+    }
+
+    /**
+     * Gets the options
+     *
+     * @returns {*}
+     */
+    getOptions()
+    {
+        return this.options;
     }
 
     /**
@@ -176,6 +194,118 @@ class Server
         });
     }
 
+    /**
+     * Gets the websocket server instance
+     *
+     * @returns {WebSocket.Server|*}
+     */
+    getWebSocketServer()
+    {
+        if (!this.wss) {
+            throw 'WebSocket server not running.';
+        }
+
+        return this.wss;
+    }
+
+    /**
+     * Handles an incoming message
+     *
+     * @param message
+     * @param ws
+     */
+    handleMessage(message, ws)
+    {
+        // Tries parsing the message as JSON
+        try {
+            if (typeof message === 'string' && message[0] === '{') {
+                const messageObject = JSON.parse(message);
+                if (typeof messageObject === 'object') {
+                    message = messageObject;
+                }
+            }
+        } catch (e) {
+            this.debug(e);
+        }
+
+        // Checks format of message
+        if (typeof message !== 'object') {
+            console.warn('Invalid request: object expected.');
+            return;
+        }
+
+        // Checks the token
+        if (message.token !== this.options.requestToken) {
+            console.warn('Invalid request token.');
+            return;
+        }
+
+        // Gets the payload
+        let payload = message.payload;
+        this.debug(payload);
+
+        // Checks if a command is specified
+        if (typeof payload.command !== 'string') {
+            console.warn('Command not specified.');
+            return;
+        }
+
+        // Public commands
+        if (typeof this.options.commands.public[payload.command] !== 'undefined') {
+            // Runs the command
+            try {
+                let command = new this.options.commands.public[payload.command](this, ws, payload.params || {});
+                command.run();
+            } catch (exception) {
+                console.warn('Command error: ', exception);
+            }
+        }
+
+        // Admin commands
+        else if (typeof this.options.commands.admin[payload.command] !== 'undefined') {
+
+            // @todo authentication (per token ? per IP ? passphrase ? user session ?)
+
+            // Runs the command
+            try {
+                let command = new this.options.commands.admin[payload.command](this, ws, payload.params || {});
+                command.run();
+            } catch (exception) {
+                console.warn('Command error: ', exception);
+            }
+        }
+
+        // Unknown command
+        else {
+            console.warn('Unknown command: ', payload.command);
+        }
+    }
+
+    /**
+     * Broadcasts a payload to all the connected clients
+     *
+     * @param payload
+     */
+    broadcast(payload)
+    {
+        let wss = this.getWebSocketServer();
+
+        // Broadcast to every client
+        console.log('Broadcasting to ' + wss.clients.size + ' client(s)');
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                console.log('Sending to client ', client._socket.remoteAddress);
+                client.sendPayload(payload);
+            }
+        });
+
+        console.log('End of broadcast');
+        console.log('');
+    }
+
+    /**
+     * Runs the server
+     */
     run()
     {
         // Starts the timeline
@@ -213,6 +343,21 @@ class Server
     }
 
     /**
+     * Broadcasts the given scenario
+     *
+     * @param scenario
+     */
+    broadcastScenario(scenario)
+    {
+        this.broadcast({
+            command: 'runScenario',
+            params: {
+                scenario,
+            },
+        });
+    }
+
+    /**
      * Runs the next scenario in timeline
      *
      * @param {Promise} promise
@@ -239,37 +384,10 @@ class Server
     }
 
     /**
-     * Broadcasts a payload to all the connected clients
+     * Schedule the next scenario with the given delay
      *
-     * @param payload
+     * @param delay
      */
-    broadcast(payload)
-    {
-        let wss = this.getWebSocketServer();
-
-        // Broadcast to every client
-        console.log('Broadcasting to ' + wss.clients.size + ' client(s)');
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                console.log('Sending to client ', client._socket.remoteAddress);
-                client.sendPayload(payload);
-            }
-        });
-
-        console.log('End of broadcast');
-        console.log('');
-    }
-
-    broadcastScenario(scenario)
-    {
-        this.broadcast({
-            command: 'runScenario',
-            params: {
-                scenario,
-            },
-        });
-    }
-
     scheduleNextScenario(delay)
     {
         // Clears the previous timer for the next scenario
@@ -283,28 +401,18 @@ class Server
         }, delay || this.options.scenarioTimeout);
     }
 
-    createScenario(options)
+    /**
+     * Creates a new scenario
+     *
+     * @param scenario
+     * @returns {Promise}
+     */
+    createRecordFromScenario(scenario)
     {
         return new Promise((resolve, reject) => {
 
-            // Converts handler options to JSON
-            let handler_options = options.handler_options || {};
-            if (typeof handler_options === 'object') {
-                handler_options = JSON.stringify(handler_options);
-            }
-
             // Builds the record
-            let record = {
-                handler: options.handler,
-                handler_options: handler_options,
-                priority: parseInt(options.priority, 10) || 0,
-                date_start: options.date_start || null,
-                date_end: options.date_end || null,
-                week_days: options.week_days || null,
-                hour_start: options.hour_start || null,
-                hour_end: options.hour_end || null,
-                display_limit: options.display_limit || null,
-            };
+            let record = this.buildRecordFromScenario(scenario);
 
             // Inserts the record
             console.log('record to insert', record);
@@ -326,6 +434,76 @@ class Server
     }
 
     /**
+     * Builds a record from the given scenario
+     *
+     * @param scenario
+     * @returns {object}
+     */
+    buildRecordFromScenario(scenario)
+    {
+        // Converts handler options to JSON
+        let handler_options = scenario.handler_options || {};
+        if (typeof handler_options === 'object') {
+            handler_options = JSON.stringify(handler_options);
+        }
+
+        // Builds the record
+        let record = {
+            handler: scenario.handler,
+            handler_options: handler_options,
+            priority: parseInt(scenario.priority, 10) || 0,
+            date_start: scenario.date_start || null,
+            date_end: scenario.date_end || null,
+            week_days: scenario.week_days || null,
+            hour_start: scenario.hour_start || null,
+            hour_end: scenario.hour_end || null,
+            display_limit: scenario.display_limit || null,
+        };
+
+        return record;
+    }
+
+    /**
+     * Builds a scenario from the given record
+     *
+     * @param record
+     * @returns {object}
+     */
+    buildScenarioFromRecord(record)
+    {
+        let scenario = Object.assign({}, record, {
+            name: record.name,
+            handler: record.handler,
+            handler_options: JSON.parse(record.handler_options) || {},
+        });
+
+        // Specific parsing per handler
+        switch (scenario.handler) {
+            case 'message':
+                // Compiles the message with the template
+                let template = fs.readFileSync('views/message.html').toString();
+                template = template.replace('{{message}}', scenario.handler_options.message || '');
+
+                // Compiles the media (image or video)
+                let video = '';
+                let image = '';
+                if (scenario.handler_options.video) {
+                    video = '<video class="media video" autoplay loop class="video"><source type="video/mp4" src="'+scenario.handler_options.video+'"></video>';
+                } else if (scenario.handler_options.image) {
+                    image = '<img class="media image" src="'+scenario.handler_options.image+'" alt=""/>';
+                }
+                template = template.replace('{{image}}', image);
+                template = template.replace('{{video}}', video);
+
+                scenario.handler_options.content = template;
+                break;
+
+        }
+
+        return scenario;
+    }
+
+    /**
      * Requests a scenario by ID
      *
      * @param id
@@ -341,7 +519,8 @@ class Server
      *
      * @returns {*}
      */
-    requestRandomScenario() {
+    requestRandomScenario()
+    {
         // Builds the query
         //
         // On prends le scénario le plus haut en priorité, dans l'interval de temps programmé (date de début,
@@ -364,6 +543,13 @@ class Server
         `);
     }
 
+    /**
+     * Gets a scenario by query
+     *
+     * @param query
+     * @param data
+     * @returns {Promise}
+     */
     getScenarioByQuery(query, data)
     {
         return new Promise((resolve, reject) => {
@@ -517,133 +703,6 @@ class Server
     getPreviousScenario()
     {
         return this.previousScenario || null;
-    }
-
-    /**
-     * Handles an incoming message
-     *
-     * @param message
-     * @param ws
-     */
-    handleMessage(message, ws)
-    {
-        // Tries parsing the message as JSON
-        try {
-            if (typeof message === 'string' && message[0] === '{') {
-                const messageObject = JSON.parse(message);
-                if (typeof messageObject === 'object') {
-                    message = messageObject;
-                }
-            }
-        } catch (e) {
-            this.debug(e);
-        }
-
-        // Checks format of message
-        if (typeof message !== 'object') {
-            console.warn('Invalid request: object expected.');
-            return;
-        }
-
-        // Checks the token
-        if (message.token !== this.options.requestToken) {
-            console.warn('Invalid request token.');
-            return;
-        }
-
-        // Gets the payload
-        let payload = message.payload;
-        this.debug(payload);
-
-        // Checks if a command is specified
-        if (typeof payload.command !== 'string') {
-            console.warn('Command not specified.');
-            return;
-        }
-
-        // Public commands
-        if (typeof this.options.commands.public[payload.command] !== 'undefined') {
-            // Runs the command
-            try {
-                let command = new this.options.commands.public[payload.command](this, ws, payload.params || {});
-                command.run();
-            } catch (exception) {
-                console.warn('Command error: ', exception);
-            }
-        }
-
-        // Admin commands
-        else if (typeof this.options.commands.admin[payload.command] !== 'undefined') {
-
-            // @todo authentication (per token ? per IP ? passphrase ? user session ?)
-
-            // Runs the command
-            try {
-                let command = new this.options.commands.admin[payload.command](this, ws, payload.params || {});
-                command.run();
-            } catch (exception) {
-                console.warn('Command error: ', exception);
-            }
-        }
-
-        // Unknown command
-        else {
-            console.warn('Unknown command: ', payload.command);
-        }
-    }
-
-    getWebSocketServer()
-    {
-        if (!this.wss) {
-            throw 'WebSocket server not running.';
-        }
-
-        return this.wss;
-    }
-
-    getOptions()
-    {
-        return this.options;
-    }
-
-    /**
-     * Builds the scenario from the given record
-     *
-     * @param record
-     * @returns {{name, handler: *, handler_options: {}}}
-     */
-    buildScenarioFromRecord(record)
-    {
-        let scenario = Object.assign({}, record, {
-            name: record.name,
-            handler: record.handler,
-            handler_options: JSON.parse(record.handler_options) || {},
-        });
-
-        // Specific parsing per handler
-        switch (scenario.handler) {
-            case 'message':
-                // Compiles the message with the template
-                let template = fs.readFileSync('views/message.html').toString();
-                template = template.replace('{{message}}', scenario.handler_options.message || '');
-
-                // Compiles the media (image or video)
-                let video = '';
-                let image = '';
-                if (scenario.handler_options.video) {
-                    video = '<video class="media video" autoplay loop class="video"><source type="video/mp4" src="'+scenario.handler_options.video+'"></video>';
-                } else if (scenario.handler_options.image) {
-                    image = '<img class="media image" src="'+scenario.handler_options.image+'" alt=""/>';
-                }
-                template = template.replace('{{image}}', image);
-                template = template.replace('{{video}}', video);
-
-                scenario.handler_options.content = template;
-                break;
-
-        }
-
-        return scenario;
     }
 
     debug(data)

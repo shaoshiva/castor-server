@@ -1,8 +1,8 @@
 {
-  "name": "novius-live-api",
+  "name": "novius-live-server",
   "author": "",
   "version": "0.0.1",
-  "description": "API for Novius Live",
+  "description": "The Novius Live Server",
   "main": "index.js",
   "dependencies": {
     "express": "^4.15.4",
@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@gitlab.lyon.novius.fr:novius/novius-live-api.git"
+    "url": "git@gitlab.lyon.novius.fr:novius/novius-live-server.git"
   },
   "license": "ISC"
 }

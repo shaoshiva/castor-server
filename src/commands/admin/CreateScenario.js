@@ -15,7 +15,7 @@ class CreateScenario extends Command
             scenario.display_limit = 1;
         }
 
-        return this.server.createScenario(scenario)
+        return this.server.createRecordFromScenario(scenario)
             .then((id) => {
                 // Auto-run the created scenario
                 if (this.params.run) {
