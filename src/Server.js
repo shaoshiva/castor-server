@@ -54,12 +54,42 @@ class Server
          */
         this.http = express();
 
-        this.http.get('/', function (req, res) {
-            res.send('Hello World!')
+        // this.http.get('/', function (req, res) {
+        //     res.send('Hello World!')
+        // });
+        //
+        // this.http.listen(this.options.http.port, () => {
+        //     console.log('Listing to HTTP requests on port '+this.options.http.port+'.')
+        // });
+
+        this.http.set('port', this.options.http.port);
+
+        this.http.listen(this.options.http.port);
+
+        var router = express.Router();
+        var path = __dirname+'/../views/server/';
+
+        router.use(function (request, response, next) {
+            console.log("/"+request.method);
+            next();
         });
 
-        this.http.listen(this.options.http.port, () => {
-            console.log('Listing to HTTP requests on port '+this.options.http.port+'.')
+        router.get("/",function(request, response){
+            response.sendFile(path+"index.html");
+        });
+
+        // router.get("/about",function(request, response){
+        //     response.sendFile(path+"about.html");
+        // });
+        //
+        // router.get("/contact",function(request, response){
+        //     response.sendFile(path+"contact.html");
+        // });
+
+        this.http.use("/", router);
+
+        this.http.use("*", function(request, response){
+            response.sendFile(path+"404.html");
         });
 
         // http.createServer(function (req, res) {
