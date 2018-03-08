@@ -481,7 +481,7 @@ class Server
         switch (scenario.handler) {
             case 'message':
                 // Compiles the message with the template
-                let template = fs.readFileSync('views/message.html').toString();
+                let template = fs.readFileSync(__dirname+'/../views/message.html').toString();
                 template = template.replace('{{message}}', scenario.handler_options.message || '');
 
                 // Compiles the media (image or video)
