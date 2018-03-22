@@ -5,6 +5,7 @@ const WebSocket     = require('ws');
 const mysql         = require('mysql');
 const express       = require('express');
 const commands      = require('../config/commands.js');
+const path          = require('path');
 
 /**
  * The server
@@ -71,50 +72,29 @@ class Server
          * HTTP server
          */
         this.http = express();
-
-        // this.http.get('/', function (req, res) {
-        //     res.send('Hello World!')
-        // });
-        //
-        // this.http.listen(this.options.http.port, () => {
-        //     console.log('Listing to HTTP requests on port '+this.options.http.port+'.')
-        // });
-
         this.http.set('port', this.options.http.port);
-
         this.http.listen(this.options.http.port);
 
         var router = express.Router();
-        var path = __dirname+'/../views/server/';
+        var viewsPath = path.join(__dirname+'/../views/admin/');
 
+        // Registers a middleware to log the requests
         router.use(function (request, response, next) {
-            console.log("/"+request.method);
+            console.log('HTTP request: '+request.method+' '+request.url);
             next();
         });
 
-        router.get("/",function(request, response){
-            response.sendFile(path+"index.html");
+        // Admin homepage
+        router.get('/',function(request, response){
+            response.sendFile(path.join(viewsPath+'index.html'));
         });
 
-        // router.get("/about",function(request, response){
-        //     response.sendFile(path+"about.html");
-        // });
-        //
-        // router.get("/contact",function(request, response){
-        //     response.sendFile(path+"contact.html");
-        // });
+        this.http.use('/', router);
 
-        this.http.use("/", router);
-
-        this.http.use("*", function(request, response){
-            response.sendFile(path+"404.html");
+        // 404
+        this.http.use('*', function(request, response){
+            response.sendFile(path.join(viewsPath+'404.html'));
         });
-
-        // http.createServer(function (req, res) {
-        //     res.writeHead(200, {'Content-Type': 'text/plain'});
-        //     res.end('Hello World\n'); //This is what the user will see
-        // }).listen(1337, '127.0.0.1');
-        // console.log('Server running at http://127.0.0.1:1337/');
     }
 
     /**
