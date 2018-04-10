@@ -1,8 +1,9 @@
 {
-  "name": "novius-live-server",
-  "author": "",
+  "name": "castor-server",
+  "description": "The Castor Server",
   "version": "0.0.1",
-  "description": "The Novius Live Server",
+  "author": "shaoshiva@gmail.com",
+  "license": "ISC",
   "main": "index.js",
   "dependencies": {
     "express": "^4.15.4",
@@ -15,7 +16,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@gitlab.lyon.novius.fr:novius/novius-live-server.git"
+    "url": "git@git@github.com:shaoshiva/castor-server.git"
   },
-  "license": "ISC"
 }

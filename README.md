@@ -1,20 +1,20 @@
-# Novius Live Server
+# Castor Server
 
-The server used to broadcast screens to Novius Live Clients.
+The server used to broadcast screens to Castor Clients.
 
 ## Install
 
-`npm install "git+ssh://git@gitlab.lyon.novius.fr:novius/novius-live-server.git#master" --save`
+`npm install "git+ssh://git@git@github.com:shaoshiva/castor-server.git#master" --save`
 
 ## Usage
 
 ```js
 "use strict";
 
-const NoviusLiveServer = require('novius-live-server');
+const CastorServer = require('castor-server');
 
 // Builds the server
-const server = new NoviusLiveServer({
+const server = new CastorServer({
     requestToken: 'YOUR_TOKEN',
     database: {
         host     : 'YOUR_DB_HOST',
@@ -22,7 +22,7 @@ const server = new NoviusLiveServer({
         password : 'YOUR_DB_PASSWORD',
         database : 'YOUR_DB_NAME',
     },
-    commands: NoviusLiveServer.defaultCommands,
+    commands: CastorServer.defaultCommands,
 });
 
 // Runs the server

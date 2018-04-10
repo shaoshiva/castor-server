@@ -167,7 +167,7 @@ class Server
 
             // On message receive
             ws.on('message', (message) => {
-                console.log('Incoming request.');
+                console.log('Incoming message.');
                 this.handleMessage(message, ws);
                 console.log('');
             });
@@ -347,7 +347,6 @@ class Server
     {
         return promise
             .then((scenario) => {
-
                 // Displays the scenario
                 this.displayScenario(scenario);
 
